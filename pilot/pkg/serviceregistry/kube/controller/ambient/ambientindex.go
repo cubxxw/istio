@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
+	"istio.io/api/label"
 	"istio.io/api/meta/v1alpha1"
 	networkingclient "istio.io/client-go/pkg/apis/networking/v1"
 	securityclient "istio.io/client-go/pkg/apis/security/v1"
@@ -231,7 +232,7 @@ func New(options Options) Index {
 	ServiceAddressIndex := krt.NewIndex[networkAddress, model.ServiceInfo](WorkloadServices, networkAddressFromService)
 	ServiceInfosByOwningWaypoint := krt.NewIndex(WorkloadServices, func(s model.ServiceInfo) []NamespaceHostname {
 		// Filter out waypoint services
-		if s.Labels[constants.ManagedGatewayLabel] == constants.ManagedGatewayMeshControllerLabel {
+		if s.Labels[label.GatewayManaged.Name] == constants.ManagedGatewayMeshControllerLabel {
 			return nil
 		}
 		waypoint := s.Service.Waypoint
@@ -277,7 +278,7 @@ func New(options Options) Index {
 	})
 	WorkloadWaypointIndex := krt.NewIndex(Workloads, func(w model.WorkloadInfo) []NamespaceHostname {
 		// Filter out waypoints.
-		if w.Labels[constants.ManagedGatewayLabel] == constants.ManagedGatewayMeshControllerLabel {
+		if w.Labels[label.GatewayManaged.Name] == constants.ManagedGatewayMeshControllerLabel {
 			return nil
 		}
 		waypoint := w.Waypoint
@@ -523,7 +524,10 @@ func (a *index) NetworksSynced() {
 
 func (a *index) Run(stop <-chan struct{}) {
 	if a.statusQueue != nil {
-		go a.statusQueue.Run(stop)
+		go func() {
+			kubeclient.WaitForCacheSync("ambient-status-queue", stop, a.HasSynced)
+			a.statusQueue.Run(stop)
+		}()
 	}
 }
 
